@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getWorkspaceData } from "@/lib/workspace-data";
+import { getWorkspaceIdentity } from "@/lib/workspace-data";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 import { NotificationList, type NotificationItem } from "@/components/workspace/notification-list";
@@ -12,7 +12,7 @@ const demoNotifications: NotificationItem[] = [
 ];
 export default async function NotificationsPage() {
   if (!isSupabaseConfigured()) return <NotificationList initialItems={demoNotifications} userId="demo-owner" isDemo />;
-  const workspace = await getWorkspaceData();
+  const workspace = await getWorkspaceIdentity();
   const supabase = await createClient();
   const { data, error } = await supabase.from("notifications")
     .select("id, type, title, body, read_at, created_at, entity_type, entity_id")
