@@ -4,8 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  BadgeCheck, Bell, ChevronDown, ChevronsLeft, ChevronsRight, ClipboardCheck,
-  FileUp, LayoutDashboard, ListTodo, Menu, Search, Settings2, UsersRound, X,
+  BadgeCheck, Bell, ChevronDown, ClipboardCheck, FileUp, LayoutDashboard, ListTodo, Menu, Search, Settings2, UsersRound, X, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Avatar } from "@/components/ui/avatar";
@@ -22,10 +21,6 @@ type Props = {
   userEmail: string;
   currentRole: "owner" | "member";
   isDemo: boolean;
-  openTasksCount: number;
-  reviewCount: number;
-  submitCount: number;
-  attentionCount: number;
 };
 
 function displayName(value: string) {
@@ -37,7 +32,7 @@ function displayName(value: string) {
   }).join(" ");
 }
 
-export function WorkspaceShell({ children, teamName, teamId, teams, userName, userEmail, currentRole, isDemo, openTasksCount, reviewCount, submitCount, attentionCount }: Props) {
+export function WorkspaceShell({ children, teamName, teamId, teams, userName, userEmail, currentRole, isDemo }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -45,6 +40,8 @@ export function WorkspaceShell({ children, teamName, teamId, teams, userName, us
   const [collapsed, setCollapsed] = useState(false);
   const [sidebarReady, setSidebarReady] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
   const [teamPending, setTeamPending] = useState(false);
   const [teamError, setTeamError] = useState("");
   const pendingG = useRef(false);
@@ -54,15 +51,15 @@ export function WorkspaceShell({ children, teamName, teamId, teams, userName, us
 
   const navItems = useMemo(() => currentRole === "owner" ? [
     { href: "/app", label: "Overview", icon: LayoutDashboard, exact: true, shortcut: "G D" },
-    { href: "/app/tasks", label: "Tasks", icon: ListTodo, shortcut: "G T", badge: openTasksCount, activeWhen: () => pathname.startsWith("/app/tasks") },
-    { href: "/app/reviews", label: "Review inbox", icon: ClipboardCheck, shortcut: "G R", badge: reviewCount, attention: attentionCount > 0 },
+    { href: "/app/tasks", label: "Tasks", icon: ListTodo, shortcut: "G T", activeWhen: () => pathname.startsWith("/app/tasks") },
+    { href: "/app/reviews", label: "Review inbox", icon: ClipboardCheck, shortcut: "G R" },
     { href: "/app/team", label: "Team", icon: UsersRound, shortcut: "G M" },
     { href: "/app/settings", label: "Settings", icon: Settings2, shortcut: "G S" },
   ] : [
     { href: "/app", label: "Overview", icon: LayoutDashboard, exact: true, shortcut: "G D" },
-    { href: "/app/tasks?view=mine", label: "My tasks", icon: ListTodo, shortcut: "G T", badge: openTasksCount, activeWhen: () => pathname.startsWith("/app/tasks") && routeView !== "submit" },
-    { href: "/app/tasks?view=submit", label: "Submit proof", icon: FileUp, shortcut: "G P", badge: submitCount, attention: attentionCount > 0, activeWhen: () => pathname.startsWith("/app/tasks") && routeView === "submit" },
-  ], [currentRole, openTasksCount, reviewCount, submitCount, attentionCount, pathname, routeView]);
+    { href: "/app/tasks?view=mine", label: "My tasks", icon: ListTodo, shortcut: "G T", activeWhen: () => pathname.startsWith("/app/tasks") && routeView !== "submit" },
+    { href: "/app/tasks?view=submit", label: "Submit proof", icon: FileUp, shortcut: "G P", activeWhen: () => pathname.startsWith("/app/tasks") && routeView === "submit" },
+  ], [currentRole, pathname, routeView]);
 
   useEffect(() => {
     try { setCollapsed(window.localStorage.getItem(SIDEBAR_KEY) === "true"); } catch { /* storage may be blocked */ }
@@ -73,6 +70,17 @@ export function WorkspaceShell({ children, teamName, teamId, teams, userName, us
     if (!sidebarReady) return;
     try { window.localStorage.setItem(SIDEBAR_KEY, String(collapsed)); } catch { /* storage may be blocked */ }
   }, [collapsed, sidebarReady]);
+
+  useEffect(() => {
+    if (!profileOpen) return;
+    function closeOnOutside(event: PointerEvent) {
+      if (event.target instanceof Node && !profileMenuRef.current?.contains(event.target)) setProfileOpen(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) { if (event.key === "Escape") setProfileOpen(false); }
+    document.addEventListener("pointerdown", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => { document.removeEventListener("pointerdown", closeOnOutside); document.removeEventListener("keydown", closeOnEscape); };
+  }, [profileOpen]);
 
   const navigateShortcut = useCallback((key: string) => {
     const targets: Record<string, string> = {
@@ -156,7 +164,7 @@ export function WorkspaceShell({ children, teamName, teamId, teams, userName, us
               <span className="brand-word">greenstamp</span>
             </Link>
             <button className="sidebar-collapse-button" type="button" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
-              {collapsed ? <ChevronsRight size={17} /> : <ChevronsLeft size={17} />}
+              {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
             </button>
             <button className="sidebar-mobile-close" type="button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={19}/></button>
           </div>
@@ -185,8 +193,11 @@ export function WorkspaceShell({ children, teamName, teamId, teams, userName, us
                   ? pathname === item.href
                   : pathname === item.href || pathname.startsWith(item.href + "/");
               const Icon = item.icon;
-              const badge = "badge" in item ? item.badge : 0;
-              const attention = "attention" in item && item.attention;
+              const badge =
+                "badge" in item && typeof item.badge === "number"
+                  ? item.badge
+                  : 0;
+              const attention = "attention" in item && item.attention === true;
               return (
                 <Link href={item.href} key={item.href} className={active ? "active" : ""} aria-current={active ? "page" : undefined} title={item.label} onClick={() => setMobileOpen(false)}>
                   <Icon size={19} strokeWidth={1.9} />
@@ -201,18 +212,18 @@ export function WorkspaceShell({ children, teamName, teamId, teams, userName, us
 
           <div className="sidebar-bottom">
             <div className="sidebar-brand-promise"><span className="sidebar-privacy-mark"><BadgeCheck size={16}/></span><span><strong>Work with proof.</strong><small>Every handoff, accounted for.</small></span></div>
-            <details className="sidebar-user-menu">
-              <summary>
+            <div className={`sidebar-user-menu${profileOpen ? " is-open" : ""}`} ref={profileMenuRef}>
+              <button className="sidebar-user-trigger" type="button" aria-expanded={profileOpen} aria-haspopup="menu" onClick={() => setProfileOpen((value) => !value)}>
                 <Avatar name={niceName} src="/avatars/default.png" size={38} className="sidebar-user-avatar" />
                 <span className="sidebar-user-copy"><strong>{niceName}</strong><small>{roleLabel}</small></span>
                 <ChevronDown size={16} className="sidebar-user-chevron" />
-              </summary>
-              <div className="profile-menu-content">
+              </button>
+              {profileOpen ? <div className="profile-menu-content" role="menu">
                 <span className="profile-menu-email">{userEmail || "Signed in"}</span>
-                <Link href="/app/settings" onClick={() => setMobileOpen(false)}>Account settings</Link>
-                {isDemo ? <Link href="/">Exit preview</Link> : <form action="/auth/signout" method="post"><button type="submit">Sign out</button></form>}
-              </div>
-            </details>
+                <Link role="menuitem" href="/app/settings" onClick={() => { setMobileOpen(false); setProfileOpen(false); }}>Account settings</Link>
+                {isDemo ? <Link role="menuitem" href="/" onClick={() => setProfileOpen(false)}>Exit preview</Link> : <form action="/auth/signout" method="post"><button role="menuitem" type="submit">Sign out</button></form>}
+              </div> : null}
+            </div>
           </div>
         </aside>
 
@@ -228,7 +239,7 @@ export function WorkspaceShell({ children, teamName, teamId, teams, userName, us
               {isDemo ? <span className="demo-chip">Sample data</span> : null}
               <ThemeToggle />
               <Link href="/app/notifications" className="topbar-icon topbar-notification" aria-label="Notifications">
-                <Bell size={19}/>{attentionCount > 0 ? <span className="notification-indicator" aria-label="Unread activity" /> : null}
+                <Bell size={19}/>
               </Link>
               <div className="topbar-user">
                 <Avatar name={niceName} src="/avatars/default.png" size={36} priority />
@@ -236,8 +247,10 @@ export function WorkspaceShell({ children, teamName, teamId, teams, userName, us
               </div>
             </div>
           </header>
-          <div className="workspace-page-context"><span>Workspace</span><span className="context-separator">/</span><strong>{activeLabel}</strong></div>
-          <div className="workspace-content">{children}</div>
+          <div className="workspace-page-container">
+            <div className="workspace-page-context"><span>Workspace</span><span className="context-separator" aria-hidden="true">›</span><strong>{activeLabel}</strong></div>
+            <div className="workspace-content">{children}</div>
+          </div>
         </div>
       </div>
     </div>
