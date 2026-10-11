@@ -8,13 +8,14 @@ import { useDemoTasks } from "@/lib/use-demo-tasks";
 import type { Task } from "@/lib/workspace-shared";
 import { shortDate } from "@/lib/workspace-shared";
 import { StatusBadge } from "@/components/workspace/status-badge";
+import { Avatar } from "@/components/ui/avatar";
 import { createClient } from "@/lib/supabase/client";
 
 type ActionState = { error?: string; success?: string };
 const MAX_BYTES = 5 * 1024 * 1024;
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 
-export function TaskDetailView({ taskId, initialTasks, canSubmit, currentRole, isDemo }: { taskId: string; initialTasks: Task[]; canSubmit: boolean; currentRole: "owner" | "member"; isDemo: boolean }) {
+export function TaskDetailView({ taskId, initialTasks, canSubmit, currentRole, isDemo, currentUserId }: { taskId: string; initialTasks: Task[]; canSubmit: boolean; currentRole: "owner" | "member"; isDemo: boolean; currentUserId: string }) {
   const router = useRouter();
   const { tasks, updateTasks, hydrated } = useDemoTasks(initialTasks, isDemo);
   const task = tasks.find((item) => item.id === taskId);
@@ -102,7 +103,7 @@ export function TaskDetailView({ taskId, initialTasks, canSubmit, currentRole, i
     <div className="dashboard-grid">
       <section className="panel"><div className="panel-heading"><div><h2>Task details</h2><p>Ownership, priority and the next step.</p></div></div>
         <div className="task-table">
-          <div className="task-row"><div><span className="task-meta" style={{ marginTop: 0 }}>Assigned to</span><strong className="task-name">{task.assigneeName}</strong></div><span className="member-role">{task.priority.toUpperCase()} PRIORITY</span></div>
+          <div className="task-row"><div><span className="task-meta" style={{ marginTop: 0 }}>Assigned to</span><span className="task-assignee-profile"><Avatar name={task.assigneeName} src={task.assigneeId === currentUserId ? "/avatars/default.png" : undefined} size={30}/><strong className="task-name">{task.assigneeName}</strong></span></div><span className="member-role">{task.priority.toUpperCase()} PRIORITY</span></div>
           <div className="task-row"><div><span className="task-meta" style={{ marginTop: 0 }}>Due date</span><strong className="task-name">{shortDate(task.dueAt)}</strong></div><CalendarDays size={17} color="#657565"/></div>
         </div>
         {task.status === "assigned" && canSubmit ? <div style={{ paddingTop: 18 }}><button className="button button-secondary button-small" disabled={pending} onClick={startWork}>Start work</button></div> : null}

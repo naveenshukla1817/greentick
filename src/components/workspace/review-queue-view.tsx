@@ -8,6 +8,7 @@ import type { Task, TaskStatus } from "@/lib/workspace-shared";
 import { shortDate } from "@/lib/workspace-shared";
 import { useDemoTasks } from "@/lib/use-demo-tasks";
 import { StatusBadge } from "@/components/workspace/status-badge";
+import { Avatar } from "@/components/ui/avatar";
 import { createClient } from "@/lib/supabase/client";
 
 type ActionState = { error?: string; success?: string };
@@ -48,7 +49,7 @@ export function ReviewQueueView({ initialTasks, isDemo, currentRole }: { initial
     {currentRole !== "owner" && !isDemo ? <div className="cookie-inline">Your role is Member. Review actions are available to the team owner.</div> : null}
     <div className="content-panel">
       {queue.length ? queue.map((task) => <article key={task.id} style={{ padding: "21px 0", borderBottom: "1px solid var(--line)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 15, flexWrap: "wrap" }}><div><Link href={`/app/tasks/${task.id}`} className="task-name" style={{ fontSize: 15 }}>{task.title}</Link><div className="task-meta"><span>{task.assigneeName}</span><span className="separator"/><span>Submitted {shortDate(task.updatedAt)}</span><span className="separator"/><span>{task.priority} priority</span></div></div><StatusBadge status={task.status}/></div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 15, flexWrap: "wrap" }}><div><Link href={`/app/tasks/${task.id}`} className="task-name" style={{ fontSize: 15 }}>{task.title}</Link><div className="task-meta"><Avatar name={task.assigneeName} size={27}/><span>{task.assigneeName}</span><span className="separator"/><span>Submitted {shortDate(task.updatedAt)}</span><span className="separator"/><span>{task.priority} priority</span></div></div><StatusBadge status={task.status}/></div>
         <p style={{ margin: "14px 0 17px", color: "var(--muted)", fontSize: 13, maxWidth: 700 }}>{task.latestSubmissionNote || task.description || "No note was included with this submission."}</p>
         {task.latestSubmissionFiles?.length ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>{task.latestSubmissionFiles.map((file) => <a key={file.id} className="button button-secondary button-small" href={file.url} target="_blank" rel="noreferrer">{file.name} ↗</a>)}</div> : null}
         {isDemo ? <div className="cookie-inline" style={{ marginTop: 0, marginBottom: 16 }}>Sample evidence preview: uploaded files are not sent to a server.</div> : null}

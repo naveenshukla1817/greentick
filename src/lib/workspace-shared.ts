@@ -15,9 +15,10 @@ export type Task = {
   latestSubmissionNote?: string | null;
   latestSubmissionFiles?: TaskProofFile[];
 };
-export type WorkspaceMember = { id: string; name: string; role: "owner" | "member" };
+export type WorkspaceMember = { id: string; name: string; role: "owner" | "member"; avatarSrc?: string | null };
+export type WorkspaceTeam = { id: string; name: string; role: "owner" | "member" };
 export type WorkspaceData = {
-  tasks: Task[]; teamId: string | null; teamName: string; memberCount: number; members: WorkspaceMember[];
+  tasks: Task[]; teamId: string | null; teamName: string; teams: WorkspaceTeam[]; memberCount: number; members: WorkspaceMember[];
   isDemo: boolean; currentUserName: string; currentUserId: string; currentUserEmail: string;
   currentRole: "owner" | "member";
 };
