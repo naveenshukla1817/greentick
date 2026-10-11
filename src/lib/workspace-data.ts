@@ -67,8 +67,8 @@ type WorkspaceCore = {
   currentRole: "owner" | "member";
 };
 
-// Shared authenticated context and compact status summaries power the shell.
-// React cache deduplicates this between the app layout and its page during one request.
+// Lightweight authenticated identity/team context powers the persistent shell.
+// React cache deduplicates this context within a server render request.
 const getWorkspaceCore = cache(async function getWorkspaceCoreImpl(): Promise<WorkspaceCore> {
   if (!isSupabaseConfigured()) {
     const demo = getDemoWorkspace();
@@ -89,15 +89,16 @@ const getWorkspaceCore = cache(async function getWorkspaceCoreImpl(): Promise<Wo
   const supabase = await createClient();
   const cookieStore = await cookies();
   const preferredTeamId = cookieStore.get(TEAM_COOKIE)?.value;
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-  if (userError || !user) redirect("/login?next=/app");
+  const { data: claimsResult, error: claimsError } = await supabase.auth.getClaims();
+  const claims = claimsResult?.claims;
+  const currentUserId = typeof claims?.sub === "string" ? claims.sub : null;
+  if (claimsError || !currentUserId) redirect("/login?next=/app");
+  const email = typeof claims?.email === "string" ? claims.email : "";
+  const metadata = claims?.user_metadata && typeof claims.user_metadata === "object" ? claims.user_metadata as Record<string, unknown> : {};
 
   const [profileResult, membershipResult] = await Promise.all([
-    supabase.from("profiles").select("id, display_name").eq("id", user.id).maybeSingle(),
-    supabase.from("team_members").select("team_id, user_id, role, joined_at").eq("user_id", user.id).is("removed_at", null).order("joined_at", { ascending: true }),
+    supabase.from("profiles").select("id, display_name").eq("id", currentUserId).maybeSingle(),
+    supabase.from("team_members").select("team_id, user_id, role, joined_at").eq("user_id", currentUserId).is("removed_at", null).order("joined_at", { ascending: true }),
   ]);
   if (profileResult.error) throw new Error(`Could not load your profile: ${profileResult.error.message}`);
   if (membershipResult.error) throw new Error(`Could not load team membership: ${membershipResult.error.message}`);
@@ -123,8 +124,7 @@ const getWorkspaceCore = cache(async function getWorkspaceCoreImpl(): Promise<Wo
     if (error) throw new Error(`Could not load workspace counts: ${error.message}`);
     tasksSummary = (data || []).map((task) => ({ status: task.status as TaskStatus, assignee_id: task.assignee_id }));
   }
-
-  const currentUserName = profileResult.data?.display_name || String(user.user_metadata?.display_name || user.email?.split("@")[0] || "Greenstamp user");
+  const currentUserName = profileResult.data?.display_name || String(metadata.display_name || email.split("@")[0] || "Greenstamp user");
   return {
     isDemo: false,
     supabase,
@@ -133,8 +133,8 @@ const getWorkspaceCore = cache(async function getWorkspaceCoreImpl(): Promise<Wo
     teamName: team?.name || "Your workspace",
     teams,
     currentUserName,
-    currentUserId: user.id,
-    currentUserEmail: user.email || "",
+    currentUserId,
+    currentUserEmail: email,
     currentRole: membership?.role || "owner",
   };
 });
@@ -181,6 +181,9 @@ export const getWorkspaceShellData = cache(async function getWorkspaceShellDataI
     attentionCount,
   };
 });
+
+/** Backward-compatible name used by existing settings and notifications routes. */
+export const getShellData = getWorkspaceShellData;
 
 /** Detailed task data is loaded only by pages that actually render task lists. */
 export const getWorkspaceData = cache(async function getWorkspaceDataImpl(includeTasks = true): Promise<WorkspaceData> {
@@ -247,6 +250,31 @@ export const getWorkspaceData = cache(async function getWorkspaceDataImpl(includ
     currentUserEmail: core.currentUserEmail,
     currentRole: core.currentRole,
   };
+});
+
+
+/** Loads only the requested task for the detail route. */
+export const getTaskData = cache(async function getTaskDataImpl(taskId: string): Promise<{ task: Task | null; isDemo: boolean; currentRole: "owner" | "member"; currentUserId: string }> {
+  const core = await getWorkspaceCore();
+  if (core.isDemo) return { task: DEMO_TASKS.find((task) => task.id === taskId) || null, isDemo: true, currentRole: core.currentRole, currentUserId: core.currentUserId };
+  if (!core.supabase || !core.teamId) return { task: null, isDemo: false, currentRole: core.currentRole, currentUserId: core.currentUserId };
+  const { data: row, error } = await core.supabase.from("tasks")
+    .select("id, team_id, title, description, assignee_id, status, priority, due_at, updated_at, created_at")
+    .eq("id", taskId).eq("team_id", core.teamId).maybeSingle();
+  if (error) throw new Error(`Could not load task: ${error.message}`);
+  if (!row) return { task: null, isDemo: false, currentRole: core.currentRole, currentUserId: core.currentUserId };
+  const profileResult = row.assignee_id
+    ? await core.supabase.from("profiles").select("display_name").eq("id", row.assignee_id).maybeSingle()
+    : { data: null, error: null };
+  if (profileResult.error) throw new Error(`Could not load task assignee: ${profileResult.error.message}`);
+  const task: Task = {
+    id: row.id, teamId: row.team_id, title: row.title, description: row.description,
+    status: row.status as TaskStatus, priority: row.priority as "low" | "medium" | "high",
+    assigneeId: row.assignee_id, assigneeName: profileResult.data?.display_name || (row.assignee_id ? "Team member" : "Unassigned"),
+    dueAt: row.due_at, updatedAt: row.updated_at || row.created_at,
+    latestSubmissionId: null, latestSubmissionNote: null, latestSubmissionFiles: [],
+  };
+  return { task, isDemo: false, currentRole: core.currentRole, currentUserId: core.currentUserId };
 });
 
 /** Loads latest submissions and proof links only for the review queue. */

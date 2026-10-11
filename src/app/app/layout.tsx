@@ -1,5 +1,7 @@
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { getWorkspaceShellData } from "@/lib/workspace-data";
+import { Suspense } from "react";
+import { RouteSkeleton } from "@/components/workspace/route-skeleton";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +20,8 @@ export default async function AppLayout({ children }: Readonly<{ children: React
       reviewCount={workspace.reviewCount}
       submitCount={workspace.submitCount}
       attentionCount={workspace.attentionCount}
-    >{children}</WorkspaceShell>
+    >
+      <Suspense fallback={<RouteSkeleton kind="dashboard" />}>{children}</Suspense>
+    </WorkspaceShell>
   );
 }
