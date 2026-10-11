@@ -57,7 +57,6 @@ function getDemoWorkspace(): WorkspaceData {
 type WorkspaceCore = {
   isDemo: boolean;
   supabase: Awaited<ReturnType<typeof createClient>> | null;
-  tasksSummary: TaskSummary[];
   teamId: string | null;
   teamName: string;
   teams: WorkspaceTeam[];
@@ -75,7 +74,6 @@ const getWorkspaceCore = cache(async function getWorkspaceCoreImpl(): Promise<Wo
     return {
       isDemo: true,
       supabase: null,
-      tasksSummary: DEMO_TASKS.map((task) => ({ status: task.status, assignee_id: task.assigneeId || null })),
       teamId: demo.teamId,
       teamName: demo.teamName,
       teams: demo.teams,
@@ -118,17 +116,10 @@ const getWorkspaceCore = cache(async function getWorkspaceCoreImpl(): Promise<Wo
 
   const team = teams.find((item) => item.id === preferredTeamId) || teams[0] || null;
   const membership = team ? memberships.find((item) => item.team_id === team.id) || null : null;
-  let tasksSummary: TaskSummary[] = [];
-  if (team) {
-    const { data, error } = await supabase.from("tasks").select("status, assignee_id").eq("team_id", team.id);
-    if (error) throw new Error(`Could not load workspace counts: ${error.message}`);
-    tasksSummary = (data || []).map((task) => ({ status: task.status as TaskStatus, assignee_id: task.assignee_id }));
-  }
   const currentUserName = profileResult.data?.display_name || String(metadata.display_name || email.split("@")[0] || "Greenstamp user");
   return {
     isDemo: false,
     supabase,
-    tasksSummary,
     teamId: team?.id || null,
     teamName: team?.name || "Your workspace",
     teams,
@@ -154,18 +145,12 @@ export type WorkspaceShellData = {
   attentionCount: number;
 };
 
-export const getWorkspaceShellData = cache(async function getWorkspaceShellDataImpl(): Promise<WorkspaceShellData> {
-  const core = await getWorkspaceCore();
-  const ownTasks = core.tasksSummary.filter((task) => task.assignee_id === core.currentUserId);
-  const roleTasks = core.currentRole === "owner" ? core.tasksSummary : ownTasks;
-  const openTasksCount = roleTasks.filter((task) => ["assigned", "in_progress", "changes_requested"].includes(task.status)).length;
-  const reviewCount = core.currentRole === "owner"
-    ? core.tasksSummary.filter((task) => task.status === "submitted").length
-    : ownTasks.filter((task) => task.status === "changes_requested").length;
-  const submitCount = ownTasks.filter((task) => ["assigned", "in_progress", "changes_requested"].includes(task.status)).length;
-  const attentionCount = core.currentRole === "owner"
-    ? reviewCount + core.tasksSummary.filter((task) => task.status === "changes_requested").length
-    : ownTasks.filter((task) => task.status === "changes_requested").length;
+export type WorkspaceIdentityData = Omit<
+  WorkspaceShellData,
+  "openTasksCount" | "reviewCount" | "submitCount" | "attentionCount"
+>;
+
+function identityFromCore(core: WorkspaceCore): WorkspaceIdentityData {
   return {
     isDemo: core.isDemo,
     teamId: core.teamId,
@@ -175,6 +160,42 @@ export const getWorkspaceShellData = cache(async function getWorkspaceShellDataI
     currentUserId: core.currentUserId,
     currentUserEmail: core.currentUserEmail,
     currentRole: core.currentRole,
+  };
+}
+
+/** Identity-only helper for routes that do not display sidebar counts. */
+export const getWorkspaceIdentityData = cache(async function getWorkspaceIdentityDataImpl(): Promise<WorkspaceIdentityData> {
+  return identityFromCore(await getWorkspaceCore());
+});
+
+/** Counts are queried only when the persistent shell itself needs rendering. */
+export const getWorkspaceShellData = cache(async function getWorkspaceShellDataImpl(): Promise<WorkspaceShellData> {
+  const core = await getWorkspaceCore();
+  let tasksSummary: TaskSummary[] = [];
+  if (core.isDemo) {
+    tasksSummary = DEMO_TASKS.map((task) => ({ status: task.status, assignee_id: task.assigneeId || null }));
+  } else if (core.supabase && core.teamId) {
+    const { data, error } = await core.supabase
+      .from("tasks")
+      .select("status, assignee_id")
+      .eq("team_id", core.teamId);
+    if (error) throw new Error(`Could not load workspace counts: ${error.message}`);
+    tasksSummary = (data || []).map((task) => ({ status: task.status as TaskStatus, assignee_id: task.assignee_id }));
+  }
+
+  const ownTasks = tasksSummary.filter((task) => task.assignee_id === core.currentUserId);
+  const roleTasks = core.currentRole === "owner" ? tasksSummary : ownTasks;
+  const openTasksCount = roleTasks.filter((task) => ["assigned", "in_progress", "changes_requested"].includes(task.status)).length;
+  const reviewCount = core.currentRole === "owner"
+    ? tasksSummary.filter((task) => task.status === "submitted").length
+    : ownTasks.filter((task) => task.status === "changes_requested").length;
+  const submitCount = ownTasks.filter((task) => ["assigned", "in_progress", "changes_requested"].includes(task.status)).length;
+  const attentionCount = core.currentRole === "owner"
+    ? reviewCount + tasksSummary.filter((task) => task.status === "changes_requested").length
+    : ownTasks.filter((task) => task.status === "changes_requested").length;
+
+  return {
+    ...identityFromCore(core),
     openTasksCount,
     reviewCount,
     submitCount,
@@ -182,8 +203,8 @@ export const getWorkspaceShellData = cache(async function getWorkspaceShellDataI
   };
 });
 
-/** Backward-compatible name used by existing settings and notifications routes. */
-export const getShellData = getWorkspaceShellData;
+/** Backward-compatible identity-only helper for settings and notifications pages. */
+export const getShellData = getWorkspaceIdentityData;
 
 /** Detailed task data is loaded only by pages that actually render task lists. */
 export const getWorkspaceData = cache(async function getWorkspaceDataImpl(includeTasks = true): Promise<WorkspaceData> {
